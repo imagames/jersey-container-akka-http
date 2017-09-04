@@ -2,6 +2,7 @@
 Jersey 2 container to deploy Jersey 2 applications over Akka-Http server. Provides low level and high level APIs.
 
 Packages built for Scala 2.11 and Scala 2.12
+
 Using: 
  * akka-http 10.0.10
  * akka-actor 2.4.19
@@ -11,6 +12,11 @@ Using:
 
 ## Usage
 ```scala
+// Define/import implicit arguments
+implicit val system = ActorSystem()
+implicit val executor = system.dispatcher
+implicit val materializer = ActorMaterializer()
+
 val jerseyApp = new ResourceConfig
 ...
 val jerseyRoute = Jersey2AkkaHttpContainer(jerseyApp)
@@ -19,21 +25,25 @@ val routes = {
         jerseyRoute
     } ~
     pathPrefix("newapi") {
-		...
-	}
+	...
+    }
 }
 ```
 
 ## Using pre-built binaries
 
 #### SBT
-```
-resolvers += "Artifactory" at "https://repo.imagames.com/public-local/"
+```sbt
+resolvers += "Imagames Repo" at "https://repo.imagames.com/public-local/"
+libraryDependencies += "com.imagames" %% "jersey-container-akka-http" % "1.0"
 ```
 
 #### Gradle
-```
+```gradle
 repositories {
     maven { url "https://repo.imagames.com/public-local/" }
+}
+dependencies {
+    compile "com.imagames:jersey-container-akka-http_2.11:1.0"
 }
 ```
