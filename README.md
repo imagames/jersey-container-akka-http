@@ -24,14 +24,14 @@ val routes = {
 }
 ```
 
-##Using pre-built binaries
+## Using pre-built binaries
 
-###SBT
+#### SBT
 ```
 resolvers += "Artifactory" at "https://repo.imagames.com/public-local/"
 ```
 
-###Gradle
+#### Gradle
 ```
 repositories {
     maven { url "https://repo.imagames.com/public-local/" }
