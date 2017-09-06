@@ -15,9 +15,10 @@
 */
 package com.imagames.jersey.akkahttp
 
+import java.lang.reflect.Type
 import java.net.URI
 import java.util.concurrent.TimeUnit
-import javax.ws.rs.core.{Application, SecurityContext}
+import javax.ws.rs.core.{Application, GenericType, SecurityContext}
 
 import akka.actor.ActorSystem
 import akka.http.scaladsl.model._
@@ -25,11 +26,15 @@ import akka.http.scaladsl.server.Directives.extractRequestContext
 import akka.http.scaladsl.server.{RequestContext, Route, RouteResult}
 import akka.stream.ActorMaterializer
 import akka.stream.scaladsl.StreamConverters
+import org.glassfish.hk2.api.ServiceLocator
 import org.glassfish.jersey.internal.MapPropertiesDelegate
+import org.glassfish.jersey.internal.util.collection.Ref
+import org.glassfish.jersey.server.spi.RequestScopedInitializer
 import org.glassfish.jersey.server.{ApplicationHandler, ContainerRequest, ResourceConfig}
 
 import scala.concurrent.duration.FiniteDuration
 import scala.concurrent.{ExecutionContext, Future, Promise}
+import scala.collection.JavaConverters._
 
 /*
 * This is the class to use to convert Jersey application to Akka Http Route or to (HttpRequest => Future[HttpResponse]) function
@@ -82,8 +87,8 @@ class Jersey2AkkaHttpContainer(application: Application, enableChunkedResponse: 
     }
 
     def directive()(implicit as: ActorSystem, ec: ExecutionContext, am: ActorMaterializer): Route = extractRequestContext {
-            c => this.route(c)
-        }
+        c => this.route(c)
+    }
 
     private def getBaseUri(uri: Uri, path: Uri.Path) = {
         val u = uri.toString()
@@ -105,20 +110,36 @@ class Jersey2AkkaHttpContainer(application: Application, enableChunkedResponse: 
     }
 
     private def myhandler(request: HttpRequest, unmatchedUri: Uri.Path)(implicit as: ActorSystem, ec: ExecutionContext, am: ActorMaterializer) = {
-        val baseUri = getHostUri(request.uri)+"/"
-        val requestUri = unmatchedUri.toString()
+        val baseUri = getHostUri(request.uri) + "/"
+        val requestUri = request.uri.rawQueryString match {
+            case Some(qs) => unmatchedUri.toString() + "?" + qs
+            case _ => unmatchedUri.toString()
+        }
 
+        // Basic
         val contReq = new ContainerRequest(URI.create(baseUri), URI.create(requestUri),
             request.method.value, getSecurityContext(request), new MapPropertiesDelegate())
 
+        // Headers
+        request.getHeaders().asScala.foreach(h => contReq.header(h.name(), h.value()))
+
+        // Input body
         val inputStream = request.entity.dataBytes
                 .runWith(
                     StreamConverters.asInputStream(FiniteDuration(3, TimeUnit.SECONDS))
                 )
-
-        val p = Promise[HttpResponse]()
-
         contReq.setEntityStream(inputStream)
+
+        // Inject resolver
+        val RequestTYPE: Type = (new GenericType[Ref[HttpRequest]]() {}).getType
+        contReq.setRequestScopedInitializer(new RequestScopedInitializer {
+            override def initialize(locator: ServiceLocator): Unit = {
+                locator.getService[Ref[HttpRequest]](RequestTYPE).set(request)
+            }
+        })
+
+        // Writer
+        val p = Promise[HttpResponse]()
         contReq.setWriter(new AkkaHttpResponseWriter(request, p, enableChunkedResponse = this.enableChunkedResponse))
 
         this.appHandler.get.handle(contReq)
