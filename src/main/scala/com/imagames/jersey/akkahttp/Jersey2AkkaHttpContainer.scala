@@ -32,9 +32,9 @@ import org.glassfish.jersey.internal.util.collection.Ref
 import org.glassfish.jersey.server.spi.RequestScopedInitializer
 import org.glassfish.jersey.server.{ApplicationHandler, ContainerRequest, ResourceConfig}
 
+import scala.collection.JavaConverters._
 import scala.concurrent.duration.FiniteDuration
 import scala.concurrent.{ExecutionContext, Future, Promise}
-import scala.collection.JavaConverters._
 
 /*
 * This is the class to use to convert Jersey application to Akka Http Route or to (HttpRequest => Future[HttpResponse]) function

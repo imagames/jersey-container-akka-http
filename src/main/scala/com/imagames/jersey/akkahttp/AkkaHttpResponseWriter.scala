@@ -15,14 +15,14 @@
 */
 package com.imagames.jersey.akkahttp
 
-import java.io.{ByteArrayOutputStream, OutputStream, PipedInputStream, PipedOutputStream}
+import java.io.{ByteArrayOutputStream, OutputStream}
 import java.util.concurrent.TimeUnit
 
 import akka.actor.{ActorSystem, Cancellable}
 import akka.http.scaladsl.model.HttpHeader.ParsingResult
 import akka.http.scaladsl.model._
 import akka.stream.ActorMaterializer
-import akka.stream.scaladsl.{Source, StreamConverters}
+import akka.stream.scaladsl.{Keep, Sink, Source, StreamConverters}
 import akka.util.ByteString
 import org.glassfish.jersey.server.ContainerResponse
 import org.glassfish.jersey.server.spi.ContainerResponseWriter
@@ -35,6 +35,7 @@ import scala.util.Try
 class AkkaHttpResponseWriter(request: HttpRequest, callback: Promise[HttpResponse], enableChunkedResponse: Boolean = false)(implicit actorSystem: ActorSystem, ec: ExecutionContext, am: ActorMaterializer) extends ContainerResponseWriter {
 
     private var cachedHeaders: List[HttpHeader] = List()
+    private var cachedAsyncOS: OutputStream = null
     private var cachedBAOS: ByteArrayOutputStream = null
     private var cachedSrc: Source[ByteString, _] = null
     private var cachedStatus = -1
@@ -72,12 +73,13 @@ class AkkaHttpResponseWriter(request: HttpRequest, callback: Promise[HttpRespons
 
     override def commit() = {
         try {
-            val ent = if (enableChunkedResponse) getChunkedEntity() else getCachedEntity()
-
-            val resp = HttpResponse(StatusCode.int2StatusCode(this.cachedStatus), cachedHeaders.filterNot(_.name() == "Content-Type"), ent, HttpProtocols.`HTTP/1.1`)
-            this.timeout.map(t => Try(t.cancel()))
-            callback.trySuccess(resp)
-
+            if (this.enableChunkedResponse) {
+                this.cachedAsyncOS.close()
+            } else {
+                val resp = HttpResponse(StatusCode.int2StatusCode(this.cachedStatus), cachedHeaders.filterNot(_.name() == "Content-Type"), getCachedEntity(), HttpProtocols.`HTTP/1.1`)
+                this.timeout.map(t => Try(t.cancel()))
+                callback.trySuccess(resp)
+            }
         } catch {
             case e: Throwable => callback.tryFailure(e)
         }
@@ -112,15 +114,14 @@ class AkkaHttpResponseWriter(request: HttpRequest, callback: Promise[HttpRespons
             null
         } else if (enableChunkedResponse) {
 
-            val in = new PipedInputStream
-            val out = new PipedOutputStream(in)
-            val src = StreamConverters.fromInputStream(() => in)
+            val (out, pub) = StreamConverters.asOutputStream().toMat(Sink.asPublisher(false))(Keep.both).run()
+            this.cachedAsyncOS = out
+            this.cachedSrc = Source.fromPublisher(pub)
 
-            this.cachedSrc = src
+            val resp = HttpResponse(StatusCode.int2StatusCode(this.cachedStatus), cachedHeaders.filterNot(_.name() == "Content-Type"), getChunkedEntity(), HttpProtocols.`HTTP/1.1`)
+            callback.trySuccess(resp)
 
-            futtt = Future.successful()
-
-            new OutputStream {
+            this.cachedAsyncOS = new OutputStream {
 
                 override def flush(): Unit = {
                     futtt = futtt.flatMap(_ => Future {
@@ -139,17 +140,20 @@ class AkkaHttpResponseWriter(request: HttpRequest, callback: Promise[HttpRespons
                 }
 
                 override def write(b: Array[Byte]) = {
+                    val _b = b.clone()
                     futtt = futtt.flatMap(_ => Future {
                         blocking {
-                            out.write(b)
+                            out.write(_b)
                         }
                     })
                 }
 
                 override def write(b: Array[Byte], off: Int, len: Int) = {
+                    val _b = b.clone()
                     futtt = futtt.flatMap(_ => Future {
                         blocking {
-                            out.write(b, off, len)
+                            out.write(_b, off, len)
+                            out.flush()
                         }
                     })
                 }
@@ -162,6 +166,7 @@ class AkkaHttpResponseWriter(request: HttpRequest, callback: Promise[HttpRespons
                     })
                 }
             }
+            this.cachedAsyncOS
         } else {
             this.cachedBAOS = if (contentLength > 0) new ByteArrayOutputStream(contentLength.toInt) else new ByteArrayOutputStream()
             this.cachedBAOS
