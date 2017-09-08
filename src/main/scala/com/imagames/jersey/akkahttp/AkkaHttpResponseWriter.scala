@@ -74,7 +74,12 @@ class AkkaHttpResponseWriter(request: HttpRequest, callback: Promise[HttpRespons
     override def commit() = {
         try {
             if (this.enableChunkedResponse) {
-                this.cachedAsyncOS.close()
+                Try(this.cachedAsyncOS.close())
+                if (!callback.isCompleted) {
+                    // contentLength was 0 at writeResponseStatusAndHeaders
+                    val resp = HttpResponse(StatusCode.int2StatusCode(this.cachedStatus), cachedHeaders.filterNot(_.name() == "Content-Type"), HttpEntity.Empty, HttpProtocols.`HTTP/1.1`)
+                    callback.trySuccess(resp)
+                }
             } else {
                 val resp = HttpResponse(StatusCode.int2StatusCode(this.cachedStatus), cachedHeaders.filterNot(_.name() == "Content-Type"), getCachedEntity(), HttpProtocols.`HTTP/1.1`)
                 this.timeout.map(t => Try(t.cancel()))
@@ -115,11 +120,9 @@ class AkkaHttpResponseWriter(request: HttpRequest, callback: Promise[HttpRespons
         } else if (enableChunkedResponse) {
 
             val (out, pub) = StreamConverters.asOutputStream().toMat(Sink.asPublisher(false))(Keep.both).run()
-            this.cachedAsyncOS = out
             this.cachedSrc = Source.fromPublisher(pub)
 
             val resp = HttpResponse(StatusCode.int2StatusCode(this.cachedStatus), cachedHeaders.filterNot(_.name() == "Content-Type"), getChunkedEntity(), HttpProtocols.`HTTP/1.1`)
-            callback.trySuccess(resp)
 
             this.cachedAsyncOS = new OutputStream {
 
@@ -166,6 +169,7 @@ class AkkaHttpResponseWriter(request: HttpRequest, callback: Promise[HttpRespons
                     })
                 }
             }
+            callback.trySuccess(resp)
             this.cachedAsyncOS
         } else {
             this.cachedBAOS = if (contentLength > 0) new ByteArrayOutputStream(contentLength.toInt) else new ByteArrayOutputStream()
