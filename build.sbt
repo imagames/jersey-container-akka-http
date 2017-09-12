@@ -1,6 +1,7 @@
 organization := "com.imagames"
 name := "jersey-container-akka-http"
-version := "1.0.3"
+isSnapshot := true
+version := "1.0.4"
 
 scalaVersion := "2.12.3"
 crossScalaVersions := Seq("2.12.3", "2.11.11")

@@ -35,6 +35,7 @@ import org.glassfish.jersey.server.{ApplicationHandler, ContainerRequest, Resour
 import scala.collection.JavaConverters._
 import scala.concurrent.duration.FiniteDuration
 import scala.concurrent.{ExecutionContext, Future, Promise}
+import scala.util.Try
 
 /*
 * This is the class to use to convert Jersey application to Akka Http Route or to (HttpRequest => Future[HttpResponse]) function
@@ -129,6 +130,13 @@ class Jersey2AkkaHttpContainer(application: Application, enableChunkedResponse: 
                     StreamConverters.asInputStream(FiniteDuration(3, TimeUnit.SECONDS))
                 )
         contReq.setEntityStream(inputStream)
+        // Content-Type header
+        Try {
+            val ct = request.entity.getContentType().mediaType.toString
+            if (ct != null && ct.length > 0 && ct != "none/none") {
+                contReq.header("Content-Type", ct)
+            }
+        }
 
         // Inject resolver
         val RequestTYPE: Type = (new GenericType[Ref[HttpRequest]]() {}).getType
