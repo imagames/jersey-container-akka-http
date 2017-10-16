@@ -36,6 +36,7 @@ import scala.collection.JavaConverters._
 import scala.concurrent.duration.FiniteDuration
 import scala.concurrent.{ExecutionContext, Future, Promise}
 import scala.util.Try
+import scala.concurrent.blocking
 
 /*
 * This is the class to use to convert Jersey application to Akka Http Route or to (HttpRequest => Future[HttpResponse]) function
@@ -110,7 +111,7 @@ class Jersey2AkkaHttpContainer(application: Application, enableChunkedResponse: 
         override def getAuthenticationScheme = null
     }
 
-    private def myhandler(request: HttpRequest, unmatchedUri: Uri.Path)(implicit as: ActorSystem, ec: ExecutionContext, am: ActorMaterializer) = {
+    private def myhandler(request: HttpRequest, unmatchedUri: Uri.Path)(implicit as: ActorSystem, ec: ExecutionContext, am: ActorMaterializer): Future[HttpResponse] = {
         val baseUri = getHostUri(request.uri) + "/"
         val requestUri = request.uri.rawQueryString match {
             case Some(qs) => unmatchedUri.toString() + "?" + qs
@@ -127,7 +128,7 @@ class Jersey2AkkaHttpContainer(application: Application, enableChunkedResponse: 
         // Input body
         val inputStream = request.entity.dataBytes
                 .runWith(
-                    StreamConverters.asInputStream(FiniteDuration(3, TimeUnit.SECONDS))
+                    StreamConverters.asInputStream(FiniteDuration(7, TimeUnit.SECONDS))
                 )
         contReq.setEntityStream(inputStream)
         // Content-Type header
@@ -150,8 +151,9 @@ class Jersey2AkkaHttpContainer(application: Application, enableChunkedResponse: 
         val p = Promise[HttpResponse]()
         contReq.setWriter(new AkkaHttpResponseWriter(request, p, enableChunkedResponse = this.enableChunkedResponse))
 
-        this.appHandler.get.handle(contReq)
-
-        p.future
+        for {
+            _ <- Future { blocking { this.appHandler.get.handle(contReq) } }
+            f <- p.future
+        } yield f
     }
 }
