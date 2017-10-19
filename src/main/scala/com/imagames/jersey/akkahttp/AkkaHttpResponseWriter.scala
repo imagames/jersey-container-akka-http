@@ -34,6 +34,7 @@ import scala.util.Try
 
 class AkkaHttpResponseWriter(request: HttpRequest, callback: Promise[HttpResponse], enableChunkedResponse: Boolean = false)(implicit actorSystem: ActorSystem, ec: ExecutionContext, am: ActorMaterializer) extends ContainerResponseWriter {
 
+    private var responseCharset: Option[String] = None
     private var cachedHeaders: List[HttpHeader] = List()
     private var cachedAsyncOS: OutputStream = null
     private var cachedBAOS: ByteArrayOutputStream = null
@@ -51,25 +52,30 @@ class AkkaHttpResponseWriter(request: HttpRequest, callback: Promise[HttpRespons
     }
 
     private def getCachedEntity() = if (this.cachedBAOS != null && this.cachedBAOS.size() > 0 && StatusCode.int2StatusCode(this.cachedStatus).allowsEntity()) {
-        val ct = cachedHeaders.find(_.name() == "Content-Type")
-        ct map { c =>
-            ContentType.parse(c.value()) match {
-                case Right(contentType) => HttpEntity(contentType, cachedBAOS.toByteArray)
-                case _ => HttpEntity(cachedBAOS.toByteArray)
-            }
-        } getOrElse HttpEntity(cachedBAOS.toByteArray)
+        HttpEntity(getContentType().getOrElse(ContentTypes.`application/octet-stream`), cachedBAOS.toByteArray)
     } else HttpEntity.Empty
 
     private def getChunkedEntity() = if (this.cachedSrc != null && StatusCode.int2StatusCode(this.cachedStatus).allowsEntity()) {
-        val src = this.cachedSrc
-        val ct = cachedHeaders.find(_.name() == "Content-Type")
-        ct map { c =>
-            ContentType.parse(c.value()) match {
-                case Right(contentType) => HttpEntity(contentType, src)
-                case _ => HttpEntity(ContentTypes.`application/octet-stream`, src)
-            }
-        } getOrElse HttpEntity(ContentTypes.`application/octet-stream`, src)
+        HttpEntity(getContentType().getOrElse(ContentTypes.`application/octet-stream`), this.cachedSrc)
     } else HttpEntity.Empty
+
+    private def getContentType(): Option[ContentType] = {
+        val ct = cachedHeaders.find(_.name() == "Content-Type")
+
+        val charset = this.responseCharset.map {
+            c => (c, HttpCharset.custom(c))
+        }
+
+        ct flatMap { c =>
+            MediaType.parse(c.value()) match {
+                case Right(mediatype) => charset match {
+                    case Some(cs) => Some(ContentType(mediatype.withParams(Map("charset" -> cs._1)), () => cs._2))
+                    case _ => None
+                }
+                case _ => None
+            }
+        }
+    }
 
     override def commit() = {
         try {
@@ -112,6 +118,20 @@ class AkkaHttpResponseWriter(request: HttpRequest, callback: Promise[HttpRespons
         }).map(h => {
             HttpHeader.parse(h.getKey, h.getValue.get(0))
         }).filter(_.isInstanceOf[ParsingResult.Ok]).map(_.asInstanceOf[ParsingResult.Ok].header).toList
+
+        this.responseCharset = responseContext.getStringHeaders.asScala.find(_._1.toLowerCase == "content-type").flatMap(h => {
+            if (h._2.size() > 0) {
+                val v = h._2.get(0).toLowerCase
+                val f = v.indexOf("charset=")
+                if (f > 0) {
+                    Some(v.substring(f+8))
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        })
 
         this.cachedStatus = responseContext.getStatus
 
