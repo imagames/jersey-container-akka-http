@@ -70,7 +70,7 @@ class AkkaHttpResponseWriter(request: HttpRequest, callback: Promise[HttpRespons
             MediaType.parse(c.value()) match {
                 case Right(mediatype) => charset match {
                     case Some(cs) => Some(ContentType(mediatype.withParams(Map("charset" -> cs._1)), () => cs._2))
-                    case _ => None
+                    case _ => Some(ContentType(mediatype, () => HttpCharsets.`UTF-8`))
                 }
                 case _ => None
             }
