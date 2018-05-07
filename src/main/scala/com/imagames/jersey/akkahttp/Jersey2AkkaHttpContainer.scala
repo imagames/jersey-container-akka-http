@@ -15,11 +15,12 @@
 */
 package com.imagames.jersey.akkahttp
 
+import java.io.InputStream
 import java.lang.reflect.Type
 import java.net.URI
 import java.util.concurrent.TimeUnit
-import javax.ws.rs.core.{Application, GenericType, SecurityContext}
 
+import javax.ws.rs.core.{Application, GenericType, SecurityContext}
 import akka.actor.ActorSystem
 import akka.http.scaladsl.model._
 import akka.http.scaladsl.server.Directives.extractRequestContext
@@ -130,7 +131,7 @@ class Jersey2AkkaHttpContainer(application: Application, enableChunkedResponse: 
                 .runWith(
                     StreamConverters.asInputStream(FiniteDuration(7, TimeUnit.SECONDS))
                 )
-        contReq.setEntityStream(inputStream)
+        contReq.setEntityStream(new FixInputStream(inputStream))
         // Content-Type header
         Try {
             val ct = request.entity.getContentType().mediaType.toString
@@ -152,8 +153,47 @@ class Jersey2AkkaHttpContainer(application: Application, enableChunkedResponse: 
         contReq.setWriter(new AkkaHttpResponseWriter(request, p, enableChunkedResponse = this.enableChunkedResponse))
 
         for {
-            _ <- Future { blocking { this.appHandler.get.handle(contReq) } }
+            _ <- Future {
+                blocking {
+                    this.appHandler.get.handle(contReq)
+                }
+            }
             f <- p.future
         } yield f
     }
+}
+
+class FixInputStream(val is: InputStream) extends InputStream {
+
+    override def read(b: Array[Byte]): Int = {
+        val r = is.read(b)
+        if (r == 0) {
+            -1
+        } else {
+            r
+        }
+    }
+
+    override def read(b: Array[Byte], off: Int, len: Int): Int = {
+        val r = is.read(b, off, len)
+        if (r == 0) {
+            -1
+        } else {
+            r
+        }
+    }
+
+    override def read(): Int = is.read()
+
+    override def markSupported(): Boolean = is.markSupported()
+
+    override def available(): Int = is.available()
+
+    override def skip(n: Long): Long = is.skip(n)
+
+    override def reset(): Unit = is.reset()
+
+    override def close(): Unit = is.close()
+
+    override def mark(readlimit: Int): Unit = is.mark(readlimit)
 }
