@@ -1,10 +1,10 @@
 organization := "com.imagames"
 name := "jersey-container-akka-http"
 isSnapshot := true
-version := "1.1.0"
+version := "1.1.1"
 
 scalaVersion := "2.12.3"
-crossScalaVersions := Seq("2.12.6", "2.11.12")
+crossScalaVersions := Seq("2.12.10", "2.11.12")
 
 libraryDependencies += "org.glassfish.jersey.core" % "jersey-common" % "2.25.1"
 libraryDependencies += "org.glassfish.jersey.core" % "jersey-server" % "2.25.1"

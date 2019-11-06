@@ -139,7 +139,10 @@ class AkkaHttpResponseWriter(request: HttpRequest, callback: Promise[HttpRespons
             null
         } else if (enableChunkedResponse) {
 
-            val (out, pub) = StreamConverters.asOutputStream().toMat(Sink.asPublisher(false))(Keep.both).run()
+            val (out, pub) = StreamConverters.asOutputStream().watchTermination() { case (a, r) =>
+                r.map(_ => Try(a.close()))
+                a
+            }.toMat(Sink.asPublisher(false))(Keep.both).run()
             this.cachedSrc = Source.fromPublisher(pub)
 
             val resp = HttpResponse(StatusCode.int2StatusCode(this.cachedStatus), cachedHeaders.filterNot(_.name() == "Content-Type"), getChunkedEntity(), HttpProtocols.`HTTP/1.1`)
