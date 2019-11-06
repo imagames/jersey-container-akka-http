@@ -35,7 +35,7 @@ val routes = {
 #### SBT
 ```sbt
 resolvers += "Imagames Repo" at "https://repo.imagames.com/public-local/"
-libraryDependencies += "com.imagames" %% "jersey-container-akka-http" % "1.1.0"
+libraryDependencies += "com.imagames" %% "jersey-container-akka-http" % "1.1.1"
 ```
 
 #### Gradle
@@ -44,7 +44,7 @@ repositories {
     maven { url "https://repo.imagames.com/public-local/" }
 }
 dependencies {
-    compile "com.imagames:jersey-container-akka-http_2.11:1.1.0" // Scala 2.11
-    compile "com.imagames:jersey-container-akka-http_2.12:1.1.0" // Scala 2.12
+    compile "com.imagames:jersey-container-akka-http_2.11:1.1.1" // Scala 2.11
+    compile "com.imagames:jersey-container-akka-http_2.12:1.1.1" // Scala 2.12
 }
 ```
