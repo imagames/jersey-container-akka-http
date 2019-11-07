@@ -18,18 +18,18 @@ package com.imagames.jersey.akkahttp
 import java.io.{ByteArrayOutputStream, OutputStream}
 import java.util.concurrent.TimeUnit
 
-import akka.actor.{ActorSystem, Cancellable}
+import akka.actor.{Actor, ActorSystem, Cancellable, Props, ReceiveTimeout}
 import akka.http.scaladsl.model.HttpHeader.ParsingResult
 import akka.http.scaladsl.model._
 import akka.stream.ActorMaterializer
-import akka.stream.scaladsl.{Keep, Sink, Source, StreamConverters}
+import akka.stream.scaladsl.{Source, StreamConverters}
 import akka.util.ByteString
 import org.glassfish.jersey.server.ContainerResponse
 import org.glassfish.jersey.server.spi.ContainerResponseWriter
 
 import scala.collection.JavaConverters._
-import scala.concurrent.duration.FiniteDuration
-import scala.concurrent.{ExecutionContext, Future, Promise, blocking}
+import scala.concurrent.duration._
+import scala.concurrent.{ExecutionContext, Promise, blocking}
 import scala.util.Try
 
 class AkkaHttpResponseWriter(request: HttpRequest, callback: Promise[HttpResponse], enableChunkedResponse: Boolean = false)(implicit actorSystem: ActorSystem, ec: ExecutionContext, am: ActorMaterializer) extends ContainerResponseWriter {
@@ -42,7 +42,6 @@ class AkkaHttpResponseWriter(request: HttpRequest, callback: Promise[HttpRespons
     private var cachedStatus = -1
     private var _isSuspended = false
     private var timeout: Option[Cancellable] = None
-    private var futtt = Future.successful()
 
     override def suspend(timeOut: Long, timeUnit: TimeUnit, timeoutHandler: ContainerResponseWriter.TimeoutHandler): Boolean = {
         // Set timeout
@@ -124,7 +123,7 @@ class AkkaHttpResponseWriter(request: HttpRequest, callback: Promise[HttpRespons
                 val v = h._2.get(0).toLowerCase
                 val f = v.indexOf("charset=")
                 if (f > 0) {
-                    Some(v.substring(f+8))
+                    Some(v.substring(f + 8))
                 } else {
                     None
                 }
@@ -139,59 +138,35 @@ class AkkaHttpResponseWriter(request: HttpRequest, callback: Promise[HttpRespons
             null
         } else if (enableChunkedResponse) {
 
-            val (out, pub) = StreamConverters.asOutputStream().watchTermination() { case (a, r) =>
-                r.map(_ => Try(a.close()))
-                a
-            }.toMat(Sink.asPublisher(false))(Keep.both).run()
-            this.cachedSrc = Source.fromPublisher(pub)
+            val (out, pub) = StreamConverters.asOutputStream().preMaterialize()
+            this.cachedSrc = pub
 
-            val resp = HttpResponse(StatusCode.int2StatusCode(this.cachedStatus), cachedHeaders.filterNot(_.name() == "Content-Type"), getChunkedEntity(), HttpProtocols.`HTTP/1.1`)
+            val act = actorSystem.actorOf(Props(classOf[AsyncOutputStreamActor], out))
 
             this.cachedAsyncOS = new OutputStream {
 
                 override def flush(): Unit = {
-                    futtt = futtt.flatMap(_ => Future {
-                        blocking {
-                            out.flush()
-                        }
-                    })
+                    act ! AsyncOutputStreamActor.Flush
                 }
 
                 override def close() = {
-                    futtt = futtt.flatMap(_ => Future {
-                        blocking {
-                            out.close()
-                        }
-                    })
+                    act ! AsyncOutputStreamActor.Close
                 }
 
                 override def write(b: Array[Byte]) = {
-                    val _b = b.clone()
-                    futtt = futtt.flatMap(_ => Future {
-                        blocking {
-                            out.write(_b)
-                        }
-                    })
+                    act ! AsyncOutputStreamActor.Write(b.clone())
                 }
 
                 override def write(b: Array[Byte], off: Int, len: Int) = {
-                    val _b = b.clone()
-                    futtt = futtt.flatMap(_ => Future {
-                        blocking {
-                            out.write(_b, off, len)
-                            out.flush()
-                        }
-                    })
+                    act ! AsyncOutputStreamActor.WriteSub(b.clone, off, len)
                 }
 
                 override def write(b: Int): Unit = {
-                    futtt = futtt.flatMap(_ => Future {
-                        blocking {
-                            out.write(b)
-                        }
-                    })
+                    act ! AsyncOutputStreamActor.WriteInt(b)
                 }
+
             }
+            val resp = HttpResponse(StatusCode.int2StatusCode(this.cachedStatus), cachedHeaders.filterNot(_.name() == "Content-Type"), getChunkedEntity(), HttpProtocols.`HTTP/1.1`)
             callback.trySuccess(resp)
             this.cachedAsyncOS
         } else {
@@ -207,4 +182,48 @@ class AkkaHttpResponseWriter(request: HttpRequest, callback: Promise[HttpRespons
     override def enableResponseBuffering() = false
 
     def isSuspended() = this._isSuspended
+}
+
+object AsyncOutputStreamActor {
+    sealed trait OutputStreamCommand
+    case class Write(array: Array[Byte]) extends OutputStreamCommand
+    case class WriteSub(array: Array[Byte], off: Int, len: Int) extends OutputStreamCommand
+    case class WriteInt(data: Int) extends OutputStreamCommand
+    case object Close extends OutputStreamCommand
+    case object Flush extends OutputStreamCommand
+}
+
+class AsyncOutputStreamActor(outputStream: OutputStream) extends Actor {
+    import AsyncOutputStreamActor._
+
+    context.setReceiveTimeout(1 minute)
+
+    override def receive: Receive = {
+        case Write(data) =>
+            blocking {
+                outputStream.write(data)
+            }
+        case WriteSub(data, off, len) =>
+            blocking {
+                outputStream.write(data, off, len)
+            }
+        case WriteInt(data) =>
+            blocking {
+                outputStream.write(data)
+            }
+        case Flush =>
+            blocking {
+                outputStream.flush()
+            }
+        case Close =>
+            blocking {
+                outputStream.close()
+            }
+            context stop self
+        case ReceiveTimeout =>
+            blocking {
+                outputStream.close()
+            }
+            context stop self
+    }
 }

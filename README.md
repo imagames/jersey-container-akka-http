@@ -4,7 +4,7 @@ Jersey 2 container to deploy Jersey 2 applications over Akka-Http server. Provid
 Packages built for Scala 2.11 and Scala 2.12
 
 Using: 
- * akka-http 10.1.0
+ * akka-http 10.1.1
  * akka-actor 2.5.12
  * akka-stream 2.5.12
  * jersey-common 2.25.1
@@ -35,7 +35,7 @@ val routes = {
 #### SBT
 ```sbt
 resolvers += "Imagames Repo" at "https://repo.imagames.com/public-local/"
-libraryDependencies += "com.imagames" %% "jersey-container-akka-http" % "1.1.1"
+libraryDependencies += "com.imagames" %% "jersey-container-akka-http" % "1.1.2"
 ```
 
 #### Gradle
@@ -44,7 +44,7 @@ repositories {
     maven { url "https://repo.imagames.com/public-local/" }
 }
 dependencies {
-    compile "com.imagames:jersey-container-akka-http_2.11:1.1.1" // Scala 2.11
-    compile "com.imagames:jersey-container-akka-http_2.12:1.1.1" // Scala 2.12
+    compile "com.imagames:jersey-container-akka-http_2.11:1.1.2" // Scala 2.11
+    compile "com.imagames:jersey-container-akka-http_2.12:1.1.2" // Scala 2.12
 }
 ```
