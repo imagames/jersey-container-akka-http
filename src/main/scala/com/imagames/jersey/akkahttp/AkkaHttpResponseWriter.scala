@@ -31,6 +31,7 @@ import scala.collection.JavaConverters._
 import scala.concurrent.duration._
 import scala.concurrent.{ExecutionContext, Promise, blocking}
 import scala.util.Try
+import scala.language.postfixOps
 
 class AkkaHttpResponseWriter(request: HttpRequest, callback: Promise[HttpResponse], enableChunkedResponse: Boolean = false)(implicit actorSystem: ActorSystem, ec: ExecutionContext, am: ActorMaterializer) extends ContainerResponseWriter {
 
