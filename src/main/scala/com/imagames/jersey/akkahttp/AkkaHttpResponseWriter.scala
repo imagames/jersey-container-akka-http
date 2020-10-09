@@ -146,12 +146,17 @@ class AkkaHttpResponseWriter(request: HttpRequest, callback: Promise[HttpRespons
 
             this.cachedAsyncOS = new OutputStream {
 
+                var closed: Boolean = false
+
                 override def flush(): Unit = {
                     act ! AsyncOutputStreamActor.Flush
                 }
 
                 override def close() = {
-                    act ! AsyncOutputStreamActor.Close
+                    if (!closed) {
+                        closed = true
+                        act ! AsyncOutputStreamActor.Close
+                    }
                 }
 
                 override def write(b: Array[Byte]) = {

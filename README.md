@@ -1,12 +1,12 @@
 # jersey-container-akka-http
 Jersey 2 container to deploy Jersey 2 applications over Akka-Http server. Provides low level and high level APIs.
 
-Packages built for Scala 2.11, Scala 2.12 and Scala 2.13
+Packages built for Scala 2.12 and Scala 2.13
 
 Using: 
- * akka-http 10.1.8
- * akka-actor 2.5.23
- * akka-stream 2.5.23
+ * akka-http 10.1.11
+ * akka-actor 2.6.9
+ * akka-stream 2.6.9
  * jersey-common 2.25.1
  * jersey-server 2.25.1
 
